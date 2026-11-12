@@ -18,7 +18,7 @@ Controls disappear after pointer inactivity away from the top/bottom. **More →
 ## Keyboard
 
 | Keys | Action |
-| --- | --- |
+|---|---|
 | Space | Play / pause |
 | Left / Right | Previous / next frame |
 | Shift + Left / Right | Seek five seconds |
@@ -32,7 +32,7 @@ Controls disappear after pointer inactivity away from the top/bottom. **More →
 | Ctrl+O / Ctrl+E | Open / export |
 | Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y | Undo / redo |
 | Ctrl+wheel over timeline | Zoom around the playhead |
-| Wheel over timeline | Pan a zoomed timeline |
+| Wheel or Shift+wheel over timeline | Pan a zoomed timeline |
 | Shift+drag on selection | Move both trim boundaries together |
 | Escape | Cancel crop, dismiss dialog, or leave fullscreen/PiP |
 | F1 | Shortcut reference |
@@ -61,6 +61,8 @@ Run from this directory in PowerShell:
 ```
 
 The script builds the native application, downloads checksum-pinned media archives from their upstream distributors, and creates `dist/Cutline-Windows-x64.zip`. It needs 7-Zip for the mpv archive. It checks the standard installation path and PATH; install 7-Zip if neither is available. Dependencies and download hashes are in `Cargo.lock` and `tools.lock.json`.
+
+In this working folder the 0.1.0 portable runtime (`Cutline.exe`, the two DLLs, `tools/`) sits beside the source and is git-ignored, and `history/` keeps the 0.1.0 source and portable archives. `Cutline-next.exe` is the current source cross-compiled for Windows; it runs from this folder against the same DLLs and tools.
 
 For Linux development, provide libmpv 0.37+ and FFmpeg/ffprobe on PATH, then `cargo run -- path/to/video.mp4`. Linux is a development/test host, not the shipped platform. Use `CUTLINE_MPV_LOG` with an absolute path when diagnosing playback.
 

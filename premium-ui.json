@@ -1,0 +1,15 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["src"],
+  "locale": "en",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": ["Select/Listbox", "Form", "Scrollbar", "Toast"],
+  "ownership": {"Select/Listbox": "authored", "Form": "authored", "Scrollbar": "native", "Toast": "authored"},
+  "requiredCommands": ["format", "lint", "test"],
+  "commands": {
+    "format": "cargo fmt --check",
+    "lint": "cargo clippy --all-targets -- -D warnings",
+    "test": "cargo test -- --test-threads=2"
+  },
+  "evidence": {"failurePaths": "tests/media_roundtrip.rs"}
+}

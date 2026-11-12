@@ -1,0 +1,26 @@
+name: Windows build and media verification
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Build and package
+        shell: pwsh
+        run: ./scripts/build-windows.ps1
+      - name: Verify real media round trips
+        shell: pwsh
+        run: ./scripts/verify-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cutline-Windows-x64
+          path: dist/Cutline-Windows-x64.zip
+          if-no-files-found: error

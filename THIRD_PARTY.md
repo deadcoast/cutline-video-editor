@@ -9,11 +9,12 @@ Cutline is a Rust application. It embeds egui/eframe for native UI, dynamically 
 | mpv Windows build recipe | shinchiro mpv-winbuild-cmake 20261020 | https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20261020 |
 | FFmpeg / ffprobe | Gyan FFmpeg 9.0.2 essentials | https://www.gyan.dev/ffmpeg/builds/ and https://ffmpeg.org/releases/ |
 | Vulkan loader | LunarG 1.4.363.0, x64 | https://github.com/KhronosGroup/Vulkan-Loader/tree/v1.4.363 and https://vulkan.lunarg.com/sdk/home |
+| Terminus Font | 4.48 bitmap strikes, 16–32 px, normal and bold | http://terminus-font.sourceforge.net/ (Debian xfonts-terminus 4.48-3.1); SIL OFL 1.1, text in licenses/fonts/Terminus-OFL.txt |
 | Rust dependencies | Exact versions in Cargo.lock | Crates.io source archives; their license texts are retained in licenses/rust-dependencies |
 
 The media archive URLs and SHA-256 hashes are pinned in `tools.lock.json`. The original mpv archive is `mpv-dev-x86_64-20261020-git-6a262d11f6.7z`. The FFmpeg archive is `ffmpeg-9.0.2-essentials_build.zip`. Executable checksums are in the portable package's SHA256SUMS.txt.
 
-The UI libraries are MIT/Apache-2.0. The supplied media builds contain GPL-enabled components. The application's source is supplied under GPL-3.0-or-later, with the GPL text included. The portable package retains the FFmpeg distribution license; the original mpv build recipe and exact upstream revision are linked above. Upstream dependencies retain their own copyright and license notices.
+The interface face in `assets/cell/` is converted from Terminus Font's BDF strikes by `scripts/cell-font.py`; the glyph bitmaps are unchanged. The UI libraries are MIT/Apache-2.0. The supplied media builds contain GPL-enabled components. The application's source is supplied under GPL-3.0-or-later, with the GPL text included. The portable package retains the FFmpeg distribution license; the original mpv build recipe and exact upstream revision are linked above. Upstream dependencies retain their own copyright and license notices.
 
 Technical references used in implementation:
 

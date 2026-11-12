@@ -1,6 +1,10 @@
-use super::theme;
+//! The crop frame: drag a corner or an edge, or move the whole rectangle.
+use super::{
+    cell::{Canvas, R},
+    theme,
+};
 use cutline::model::{Crop, Edit};
-use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, StrokeKind};
+use eframe::egui::{self, Pos2, Rect, Sense};
 
 #[derive(Clone, Copy)]
 enum Handle {
@@ -23,6 +27,7 @@ impl CropEditor {
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
+        canvas: &mut Canvas,
         video: Rect,
         source: [u32; 2],
         edit: &mut Edit,
@@ -49,7 +54,7 @@ impl CropEditor {
             r.center_bottom(),
             r.left_center(),
         ];
-        let response = ui.interact(video, ui.id().with("crop-canvas"), Sense::drag());
+        let response = ui.interact(video, ui.id().with("crop-canvas"), Sense::DRAG);
         response.widget_info(|| {
             egui::WidgetInfo::labeled(
                 egui::WidgetType::Other,
@@ -179,67 +184,96 @@ impl CropEditor {
                 edit.crop = Crop::constrained(l, t, rr - l, bb - t, source);
             }
         }
-        let r = crop_rect(edit.crop);
-        let p = ui.painter_at(video.expand(8.0));
-        let veil = Color32::from_black_alpha(172);
+        let font = canvas.font;
+        let frame = font.snap(crop_rect(edit.crop));
+        let whole = font.snap(video);
+        // Everything outside the crop is dimmed by the veil; nothing else covers the frame.
         for outside in [
-            Rect::from_min_max(video.min, egui::pos2(video.right(), r.top())),
-            Rect::from_min_max(egui::pos2(video.left(), r.bottom()), video.max),
-            Rect::from_min_max(egui::pos2(video.left(), r.top()), r.left_bottom()),
-            Rect::from_min_max(r.right_top(), egui::pos2(video.right(), r.bottom())),
+            R::new(whole.x, whole.y, whole.w, frame.y - whole.y),
+            R::new(
+                whole.x,
+                frame.bottom(),
+                whole.w,
+                whole.bottom() - frame.bottom(),
+            ),
+            R::new(whole.x, frame.y, frame.x - whole.x, frame.h),
+            R::new(
+                frame.right(),
+                frame.y,
+                whole.right() - frame.right(),
+                frame.h,
+            ),
         ] {
-            p.rect_filled(outside, 0.0, veil);
+            if !outside.is_empty() {
+                canvas.fill(outside, theme::VEIL);
+            }
         }
-        p.rect_stroke(
-            r,
-            0.0,
-            Stroke::new(1.5_f32, theme::CROP),
-            StrokeKind::Inside,
+        for third in 1..3 {
+            canvas.fill(
+                R::new(frame.x + frame.w * third / 3, frame.y, font.px, frame.h),
+                theme::DIM,
+            );
+            canvas.fill(
+                R::new(frame.x, frame.y + frame.h * third / 3, frame.w, font.px),
+                theme::DIM,
+            );
+        }
+        // The frame and its drag marks, heavier at the corners and mid-edges. Each mark carries
+        // a one-pixel black edge so it reads on any picture, including one in the crop colour.
+        let weight = 3 * font.px;
+        let arm = font.ch.min(frame.w / 2).min(frame.h / 2);
+        let mut marks = vec![
+            R::new(frame.x, frame.y, frame.w, font.px),
+            R::new(frame.x, frame.bottom() - font.px, frame.w, font.px),
+            R::new(frame.x, frame.y, font.px, frame.h),
+            R::new(frame.right() - font.px, frame.y, font.px, frame.h),
+        ];
+        for (x, y) in [
+            (frame.x, frame.y),
+            (frame.right() - arm, frame.y),
+            (frame.x, frame.bottom() - weight),
+            (frame.right() - arm, frame.bottom() - weight),
+        ] {
+            marks.push(R::new(x, y, arm, weight));
+        }
+        for (x, y) in [
+            (frame.x, frame.y),
+            (frame.right() - weight, frame.y),
+            (frame.x, frame.bottom() - arm),
+            (frame.right() - weight, frame.bottom() - arm),
+        ] {
+            marks.push(R::new(x, y, weight, arm));
+        }
+        if frame.w > 4 * arm {
+            let x = frame.x + (frame.w - arm) / 2;
+            marks.push(R::new(x, frame.y, arm, weight));
+            marks.push(R::new(x, frame.bottom() - weight, arm, weight));
+        }
+        if frame.h > 4 * arm {
+            let y = frame.y + (frame.h - arm) / 2;
+            marks.push(R::new(frame.x, y, weight, arm));
+            marks.push(R::new(frame.right() - weight, y, weight, arm));
+        }
+        for mark in &marks {
+            canvas.fill(mark.inset(-font.px, -font.px), theme::VOID);
+        }
+        for mark in marks {
+            canvas.fill(mark, theme::CROP);
+        }
+        // The size travels with the frame while it changes.
+        let size = format!("{}×{}", edit.crop.width, edit.crop.height);
+        let label = R::new(
+            frame.x,
+            if frame.y - font.ch >= whole.y {
+                frame.y - font.ch
+            } else {
+                frame.y
+            },
+            font.width(&size) + 2 * font.cw,
+            font.ch,
         );
-        for fraction in [1.0 / 3.0, 2.0 / 3.0] {
-            p.line_segment(
-                [
-                    r.min + egui::vec2(r.width() * fraction, 0.0),
-                    r.left_bottom() + egui::vec2(r.width() * fraction, 0.0),
-                ],
-                Stroke::new(1.0_f32, theme::CROP.gamma_multiply(0.35)),
-            );
-            p.line_segment(
-                [
-                    r.min + egui::vec2(0.0, r.height() * fraction),
-                    r.right_top() + egui::vec2(0.0, r.height() * fraction),
-                ],
-                Stroke::new(1.0_f32, theme::CROP.gamma_multiply(0.35)),
-            );
-        }
-        for (i, point) in [
-            r.left_top(),
-            r.right_top(),
-            r.right_bottom(),
-            r.left_bottom(),
-        ]
-        .iter()
-        .enumerate()
-        {
-            let dx = if i == 0 || i == 3 { 1.0 } else { -1.0 };
-            let dy = if i < 2 { 1.0 } else { -1.0 };
-            p.line_segment(
-                [*point, *point + egui::vec2(dx * 20.0, 0.0)],
-                Stroke::new(4.0_f32, theme::INK),
-            );
-            p.line_segment(
-                [*point, *point + egui::vec2(0.0, dy * 20.0)],
-                Stroke::new(4.0_f32, theme::INK),
-            );
-        }
-        for point in [
-            r.center_top(),
-            r.right_center(),
-            r.center_bottom(),
-            r.left_center(),
-        ] {
-            p.circle_filled(point, 4.0, theme::INK);
-        }
+        canvas.fill(label, theme::CROP);
+        canvas.text(label.x + font.cw, label.y, &size, theme::PANEL, true);
         if let Some(pos) = ui.input(|i| i.pointer.hover_pos())
             && let Some(h) = hit(pos)
         {

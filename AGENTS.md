@@ -8,5 +8,6 @@ Read README.md, DESIGN.md and UX-CONTRACT.md before changing behavior.
 - Keep libmpv unsafe code in media/player.rs with lifetime/thread explanations. Respect its OpenGL state contract. Test repeated launches as well as a fresh process.
 - Run cargo fmt --check, cargo clippy --all-targets -- -D warnings, and the relevant real-media tests. Keep the lockfile.
 - Verify native UI states after layout/gesture changes. Do not replace native inspection with an HTML mockup.
+- The interface is the cell system in DESIGN.md. Draw only through `ui/cell.rs` and `ui/kit.rs`: no stock egui widget, outline font, rounded shape, blend, second text size, popup or tooltip. A control prints its own key.
 - Treat Windows cross-compilation, native Linux runtime checks, Windows device tests and GPU performance measurement as distinct evidence.
 - Do not introduce server accounts, telemetry, webviews, effect suites or dashboard layouts.

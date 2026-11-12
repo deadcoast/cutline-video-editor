@@ -1,9 +1,13 @@
-use super::theme;
+//! The timeline: a ruler of source time, the rail, and the two trim brackets.
+use super::{
+    cell::{Canvas, Font, R},
+    kit, theme,
+};
 use cutline::{
     media::probe::Media,
     model::{Edit, Trim, timecode},
 };
-use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
+use eframe::egui::{self, Sense};
 
 /// Half-width of the pointer zone around a trim bracket, in logical pixels.
 const GRAB: f32 = 13.0;
@@ -48,8 +52,8 @@ pub struct Response {
 
 /// Which part a press at `x` takes. Brackets that overlap on screen (a short selection in a
 /// long video) split at their midpoint, so the end bracket stays reachable from its outer side.
-fn grab(x: f32, head: f32, tail: f32, shift: bool) -> Part {
-    match ((x - head).abs() < GRAB, (x - tail).abs() < GRAB) {
+fn grab(x: f32, head: f32, tail: f32, reach: f32, shift: bool) -> Part {
+    match ((x - head).abs() < reach, (x - tail).abs() < reach) {
         (true, true) if x < (head + tail) / 2.0 => Part::Head,
         (true, true) | (false, true) => Part::Tail,
         (true, false) => Part::Head,
@@ -58,8 +62,8 @@ fn grab(x: f32, head: f32, tail: f32, shift: bool) -> Part {
     }
 }
 
-/// Seconds between ruler ticks for a view showing `span` seconds across `width` pixels.
-/// Constant-rate video uses one tick per frame once frames are far enough apart to see.
+/// Seconds between ruler ticks for a view showing `span` seconds across `width` logical
+/// pixels. Constant-rate video uses one tick per frame once frames are far enough apart.
 fn tick_step(span: f64, width: f64, frame: Option<f64>) -> f64 {
     const STEPS: [f64; 22] = [
         0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0,
@@ -78,7 +82,22 @@ fn tick_step(span: f64, width: f64, frame: Option<f64>) -> f64 {
         .unwrap_or_else(|| (least / 36000.0).ceil() * 36000.0)
 }
 
+/// How many ticks apart ruler labels sit: a multiple of five (labels go on long ticks) wide
+/// enough that a label of `label_cells` never touches the next one.
+fn label_interval(tick_pixels: f64, cell: f64, label_cells: usize) -> i64 {
+    let needed = (label_cells as f64 + 3.0) * cell;
+    (((needed / (tick_pixels * 5.0)).ceil() as i64).max(1)) * 5
+}
+
 impl Timeline {
+    /// Ruler line, rail, and the strip that shows where a zoomed view sits in the video.
+    pub fn height(font: &Font) -> i32 {
+        font.ch + Self::rail(font) + font.ch / 2
+    }
+    /// The rail is two cells tall: the largest target on the deck.
+    fn rail(font: &Font) -> i32 {
+        2 * font.ch
+    }
     pub fn fit(&mut self) {
         self.zoom = 1.0;
         self.offset = 0.0;
@@ -90,30 +109,22 @@ impl Timeline {
         let span = duration / self.zoom;
         self.offset = (position - span * fraction).clamp(0.0, (duration - span).max(0.0));
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
+        canvas: &mut Canvas,
+        live: bool,
+        area: R,
         media: &Media,
         edit: &mut Edit,
         position: f64,
         playing: bool,
     ) -> Response {
+        let font = canvas.font;
         let mut result = Response::default();
-        let (rect, response) = ui.allocate_exact_size(
-            Vec2::new(ui.available_width(), 58.0),
-            Sense::click_and_drag(),
-        );
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::WidgetType::Slider,
-                true,
-                "Trim timeline. I sets the start; O sets the end. Open Trim for numeric entry.",
-            )
-        });
-        let rail = Rect::from_min_max(
-            rect.min + egui::vec2(12.0, 22.0),
-            rect.max - egui::vec2(12.0, 8.0),
-        );
+        let ruler = R::new(area.x, area.y, area.w, font.ch);
+        let rail = R::new(area.x, ruler.bottom(), area.w, Self::rail(font));
         let span = media.duration / self.zoom;
         let visible = |offset: f64, time: f64| time >= offset && time <= offset + span;
         if playing
@@ -126,198 +137,235 @@ impl Timeline {
         }
         self.last_position = position;
         self.offset = self.offset.clamp(0.0, (media.duration - span).max(0.0));
-        let time_to_x = |t: f64| rail.left() + ((t - self.offset) / span) as f32 * rail.width();
+        let offset = self.offset;
+        // Device pixels. The rail's last pixel column is the end of the visible span.
+        let time_to_x = |t: f64| rail.x + ((t - offset) / span * rail.w as f64).round() as i32;
         let x_to_time = |x: f32| {
-            ((x - rail.left()) as f64 / rail.width() as f64 * span + self.offset)
+            ((x * font.ppp - rail.x as f32) as f64 / rail.w as f64 * span + offset)
                 .clamp(0.0, media.duration)
         };
-        let head = time_to_x(edit.trim.start);
-        let tail = time_to_x(edit.trim.end);
-        if response.drag_started()
-            && let Some(pointer) = ui.input(|i| i.pointer.press_origin())
-        {
-            let part = grab(pointer.x, head, tail, ui.input(|i| i.modifiers.shift));
-            self.drag = Some(Drag {
-                part,
-                before: edit.clone(),
-                origin: x_to_time(pointer.x),
+        let to_points = |x: i32| x as f32 / font.ppp;
+        let head = to_points(time_to_x(edit.trim.start));
+        let tail = to_points(time_to_x(edit.trim.end));
+        let response = live.then(|| {
+            let response = ui.interact(
+                font.points(R::new(area.x, area.y, area.w, ruler.h + rail.h)),
+                ui.id().with("timeline"),
+                Sense::click_and_drag(),
+            );
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(
+                    egui::WidgetType::Slider,
+                    true,
+                    "Trim timeline. I sets the start; O sets the end. T types exact times.",
+                )
             });
-        }
-        if let Some(pointer) = response.interact_pointer_pos() {
-            if let Some(drag) = &self.drag {
-                let target = media.snap(x_to_time(pointer.x));
-                let minimum = media.rate.frame_seconds().min(media.duration);
-                match drag.part {
-                    Part::Head => {
-                        edit.trim.start = target.min(edit.trim.end - minimum).max(0.0);
-                        result.seek = Some((edit.trim.start, false));
+            response
+        });
+        if let Some(response) = &response {
+            if response.drag_started()
+                && let Some(pointer) = ui.input(|i| i.pointer.press_origin())
+            {
+                self.drag = Some(Drag {
+                    part: grab(pointer.x, head, tail, GRAB, ui.input(|i| i.modifiers.shift)),
+                    before: edit.clone(),
+                    origin: x_to_time(pointer.x),
+                });
+            }
+            if let Some(pointer) = response.interact_pointer_pos() {
+                if let Some(drag) = &self.drag {
+                    let target = media.snap(x_to_time(pointer.x));
+                    let minimum = media.rate.frame_seconds().min(media.duration);
+                    match drag.part {
+                        Part::Head => {
+                            edit.trim.start = target.min(edit.trim.end - minimum).max(0.0);
+                            result.seek = Some((edit.trim.start, false));
+                        }
+                        Part::Tail => {
+                            edit.trim.end =
+                                target.max(edit.trim.start + minimum).min(media.duration);
+                            result.seek =
+                                Some(((edit.trim.end - minimum).max(edit.trim.start), false));
+                        }
+                        Part::Playhead => result.seek = Some((target, false)),
+                        Part::Selection => {
+                            let length = drag.before.trim.duration();
+                            let start = media
+                                .snap(drag.before.trim.start + target - drag.origin)
+                                .clamp(0.0, media.duration - length);
+                            edit.trim = Trim {
+                                start,
+                                end: start + length,
+                            };
+                            result.seek = Some((start, false));
+                        }
                     }
-                    Part::Tail => {
-                        edit.trim.end = target.max(edit.trim.start + minimum).min(media.duration);
-                        result.seek = Some(((edit.trim.end - minimum).max(edit.trim.start), false));
-                    }
-                    Part::Playhead => result.seek = Some((target, false)),
-                    Part::Selection => {
-                        let length = drag.before.trim.duration();
-                        let start = media
-                            .snap(drag.before.trim.start + target - drag.origin)
-                            .clamp(0.0, media.duration - length);
-                        edit.trim = Trim {
-                            start,
-                            end: start + length,
-                        };
-                        result.seek = Some((start, false));
-                    }
+                } else if response.clicked() {
+                    result.seek = Some((media.snap(x_to_time(pointer.x)), true));
                 }
-            } else if response.clicked() {
-                result.seek = Some((media.snap(x_to_time(pointer.x)), true));
+            }
+            if response.drag_stopped()
+                && let Some(drag) = self.drag.take()
+            {
+                result.committed = Some(drag.before);
+                let target = match drag.part {
+                    Part::Head | Part::Selection => edit.trim.start,
+                    Part::Tail => (edit.trim.end - media.rate.frame_seconds()).max(edit.trim.start),
+                    Part::Playhead => response
+                        .interact_pointer_pos()
+                        .map(|p| media.snap(x_to_time(p.x)))
+                        .unwrap_or(position),
+                };
+                result.seek = Some((target, true));
+            }
+            if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+                result.seek = Some((
+                    (position + media.rate.frame_seconds()).min(media.duration),
+                    true,
+                ));
+            }
+            if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+                result.seek = Some(((position - media.rate.frame_seconds()).max(0.0), true));
             }
         }
-        if response.drag_stopped()
-            && let Some(drag) = self.drag.take()
-        {
-            result.committed = Some(drag.before);
-            let target = match drag.part {
-                Part::Head | Part::Selection => edit.trim.start,
-                Part::Tail => (edit.trim.end - media.rate.frame_seconds()).max(edit.trim.start),
-                Part::Playhead => response
-                    .interact_pointer_pos()
-                    .map(|p| media.snap(x_to_time(p.x)))
-                    .unwrap_or(position),
-            };
-            result.seek = Some((target, true));
-        }
         result.editing = self.drag.is_some();
-        if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
-            result.seek = Some((
-                (position + media.rate.frame_seconds()).min(media.duration),
-                true,
-            ));
-        }
-        if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
-            result.seek = Some(((position - media.rate.frame_seconds()).max(0.0), true));
-        }
-        let p = ui.painter_at(rect);
-        p.rect_filled(rail, 2.0, Color32::from_rgb(46, 51, 57));
-        let selected = Rect::from_min_max(
-            Pos2::new(time_to_x(edit.trim.start).max(rail.left()), rail.top()),
-            Pos2::new(time_to_x(edit.trim.end).min(rail.right()), rail.bottom()),
-        );
-        if selected.is_positive() {
-            p.rect_filled(selected, 0.0, theme::TRIM.gamma_multiply(0.18));
-            p.line_segment(
-                [selected.left_top(), selected.right_top()],
-                Stroke::new(1.0_f32, theme::TRIM),
-            );
-            p.line_segment(
-                [selected.left_bottom(), selected.right_bottom()],
-                Stroke::new(1.0_f32, theme::TRIM),
+
+        // The rail is a recess; the kept part of the video is raised inside it.
+        canvas.fill(rail, theme::FIELD);
+        let overshoot = font.ch / 8;
+        let weight = 3 * font.px;
+        let outer = canvas.narrow(R::new(
+            area.x - weight,
+            area.y,
+            area.w + 2 * weight,
+            ruler.h + rail.h + overshoot,
+        ));
+        let (head_x, tail_x) = (time_to_x(edit.trim.start), time_to_x(edit.trim.end));
+        let kept = R::new(head_x, rail.y, tail_x - head_x, rail.h).intersect(rail);
+        if !kept.is_empty() {
+            canvas.fill(kept, theme::RULE);
+            canvas.fill(R::new(kept.x, kept.y, kept.w, font.px), theme::TRIM);
+            canvas.fill(
+                R::new(kept.x, kept.bottom() - font.px, kept.w, font.px),
+                theme::TRIM,
             );
         }
         // The ruler measures source time: ticks stay on their timestamps through zoom and pan.
         let step = tick_step(
             span,
-            rail.width() as f64,
+            (rail.w as f32 / font.ppp) as f64,
             (!media.variable_rate).then(|| media.rate.frame_seconds()),
         );
-        let first = (self.offset / step).ceil() as i64;
-        let last = ((self.offset + span) / step).floor() as i64;
-        for index in first..=last {
-            let x = time_to_x(index as f64 * step);
-            p.line_segment(
-                [
-                    Pos2::new(x, rail.center().y - 2.0),
-                    Pos2::new(x, rail.center().y + if index % 5 == 0 { 4.0 } else { 2.0 }),
-                ],
-                Stroke::new(1.0_f32, theme::MUTED.gamma_multiply(0.35)),
-            );
+        let tick_pixels = step / span * rail.w as f64;
+        let whole_seconds = |interval: i64| (step * interval as f64).fract().abs() < 1e-9;
+        let mut interval = label_interval(tick_pixels, font.cw as f64, 8);
+        if !whole_seconds(interval) {
+            interval = label_interval(tick_pixels, font.cw as f64, 12);
         }
-        for (time, is_head) in [(edit.trim.start, true), (edit.trim.end, false)] {
-            let x = time_to_x(time);
-            if x >= rail.left() - 1.0 && x <= rail.right() + 1.0 {
-                let handle = Rect::from_center_size(
-                    Pos2::new(x, rail.center().y),
-                    egui::vec2(18.0, rail.height() + 8.0),
-                );
-                p.rect_filled(handle, 2.0, theme::TRIM);
-                let direction = if is_head { 1.0 } else { -1.0 };
-                for y in [-7.0, 7.0] {
-                    p.line_segment(
-                        [
-                            Pos2::new(x - direction * 2.0, rail.center().y + y),
-                            Pos2::new(x + direction * 3.0, rail.center().y + y),
-                        ],
-                        Stroke::new(1.5_f32, theme::CANVAS),
+        let first = (offset / step).ceil() as i64;
+        let last = ((offset + span) / step).floor() as i64;
+        for index in first..=last {
+            let time = index as f64 * step;
+            let x = time_to_x(time).min(rail.right() - font.px);
+            let long = index % 5 == 0;
+            canvas.fill(
+                R::new(
+                    x,
+                    rail.y,
+                    font.px,
+                    if long { font.ch / 2 } else { font.ch / 4 },
+                ),
+                theme::DIM,
+            );
+            if index % interval == 0 {
+                let label = timecode(time);
+                let label = if whole_seconds(interval) {
+                    &label[..8]
+                } else {
+                    &label[..]
+                };
+                if x + font.cw / 2 + font.width(label) <= rail.right() {
+                    canvas.fill(
+                        R::new(x, ruler.y + font.ch / 4, font.px, ruler.h),
+                        theme::DIM,
                     );
+                    canvas.text(x + font.cw / 2, ruler.y, label, theme::DIM, false);
                 }
-                p.line_segment(
-                    [
-                        Pos2::new(x - direction * 2.0, rail.center().y - 7.0),
-                        Pos2::new(x - direction * 2.0, rail.center().y + 7.0),
-                    ],
-                    Stroke::new(1.5_f32, theme::CANVAS),
+            }
+        }
+        for (x, opening) in [(head_x - weight, true), (tail_x + weight, false)] {
+            let edge = if opening { head_x } else { tail_x };
+            if edge >= rail.x && edge <= rail.right() {
+                kit::bracket(
+                    canvas,
+                    (x, rail.y - overshoot, rail.h + 2 * overshoot),
+                    (weight, font.cw),
+                    opening,
+                    theme::TRIM,
                 );
             }
         }
+        canvas.restore(outer);
         let x = time_to_x(position);
-        if rail.x_range().contains(x) {
-            p.line_segment(
-                [
-                    Pos2::new(x, rail.top() - 7.0),
-                    Pos2::new(x, rail.bottom() + 6.0),
-                ],
-                Stroke::new(1.5_f32, theme::INK),
-            );
-            p.circle_filled(Pos2::new(x, rail.top() - 8.0), 3.0, theme::INK);
+        if x >= rail.x && x <= rail.right() {
+            let x = x.min(rail.right() - font.px);
+            canvas.fill(R::new(x, rail.y, font.px, rail.h), theme::INK);
+            // A pixel triangle in the ruler line's descender band, pointing at the frame.
+            let rows = font.ch / 4;
+            for row in 0..rows {
+                let half = (rows - 1 - row) * font.px;
+                canvas.fill(
+                    R::new(
+                        x - half,
+                        rail.y - (rows - row) * font.px,
+                        2 * half + font.px,
+                        font.px,
+                    ),
+                    theme::INK,
+                );
+            }
         }
-        p.text(
-            Pos2::new(rail.left(), rect.top()),
-            Align2::LEFT_TOP,
-            format!("IN  {}", timecode(edit.trim.start)),
-            FontId::monospace(11.0),
-            theme::TRIM,
-        );
-        p.text(
-            Pos2::new(rail.right(), rect.top()),
-            Align2::RIGHT_TOP,
-            format!("{}  OUT", timecode(edit.trim.end)),
-            FontId::monospace(11.0),
-            theme::TRIM,
-        );
-        if rail.width() > 420.0 {
-            p.text(
-                Pos2::new(rail.center().x, rect.top()),
-                Align2::CENTER_TOP,
-                if self.zoom > 1.0 {
-                    format!(
-                        "{} – {}  ·  {:.0}×",
-                        timecode(self.offset),
-                        timecode(self.offset + span),
-                        self.zoom
-                    )
-                } else {
-                    format!("{} selected", timecode(edit.trim.duration()))
-                },
-                FontId::monospace(11.0),
-                theme::MUTED,
+        if response.as_ref().is_some_and(|r| r.has_focus()) {
+            canvas.frame(rail, 1, theme::INK);
+        }
+        if self.zoom > 1.0 {
+            // Where the zoomed view sits in the whole video.
+            let strip = R::new(area.x, rail.bottom() + font.ch / 8, area.w, font.ch / 4);
+            let whole = |t: f64| strip.x + (t / media.duration * strip.w as f64).round() as i32;
+            canvas.fill(strip, theme::FIELD);
+            let window = R::new(
+                whole(offset),
+                strip.y,
+                (whole(offset + span) - whole(offset)).max(2 * font.px),
+                strip.h,
+            );
+            canvas.fill(window, theme::DIM);
+            canvas.fill(
+                R::new(
+                    whole(edit.trim.start),
+                    strip.y,
+                    (whole(edit.trim.end) - whole(edit.trim.start)).max(font.px),
+                    font.px,
+                ),
+                theme::TRIM,
+            );
+            canvas.fill(
+                R::new(
+                    whole(position).min(strip.right() - font.px),
+                    strip.y,
+                    font.px,
+                    strip.h,
+                ),
+                theme::INK,
             );
         }
-        if response.has_focus() {
-            p.rect_stroke(
-                rect,
-                3.0,
-                Stroke::new(1.0_f32, theme::CROP),
-                StrokeKind::Inside,
-            );
-        }
-        if response.hovered() {
-            if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
-                let handle = (pos.x - head).abs() < GRAB || (pos.x - tail).abs() < GRAB;
-                ui.ctx().set_cursor_icon(if handle {
-                    egui::CursorIcon::ResizeHorizontal
-                } else {
-                    egui::CursorIcon::PointingHand
-                });
+        if let Some(response) = &response
+            && response.hovered()
+        {
+            if let Some(pos) = ui.input(|i| i.pointer.hover_pos())
+                && ((pos.x - head).abs() < GRAB || (pos.x - tail).abs() < GRAB)
+            {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             }
             // egui turns Ctrl+wheel (and pinch) into a zoom factor and withholds it from the
             // scroll delta, so zoom has to be read from `zoom_delta`.
@@ -337,7 +385,6 @@ impl Timeline {
                 }
             }
         }
-        response.on_hover_text("Drag the brackets to trim · Click to seek · Shift-drag to move the selection · Ctrl+wheel to zoom");
         result
     }
 }
@@ -348,13 +395,13 @@ mod tests {
     #[test]
     fn overlapping_brackets_stay_separately_reachable() {
         // Two seconds selected in a two-hour video: both brackets land on the same pixel.
-        assert_eq!(grab(396.0, 400.0, 400.2, false), Part::Head);
-        assert_eq!(grab(404.0, 400.0, 400.2, false), Part::Tail);
-        assert_eq!(grab(105.0, 100.0, 900.0, false), Part::Head);
-        assert_eq!(grab(895.0, 100.0, 900.0, false), Part::Tail);
-        assert_eq!(grab(500.0, 100.0, 900.0, true), Part::Selection);
-        assert_eq!(grab(500.0, 100.0, 900.0, false), Part::Playhead);
-        assert_eq!(grab(950.0, 100.0, 900.0, true), Part::Playhead);
+        assert_eq!(grab(396.0, 400.0, 400.2, GRAB, false), Part::Head);
+        assert_eq!(grab(404.0, 400.0, 400.2, GRAB, false), Part::Tail);
+        assert_eq!(grab(105.0, 100.0, 900.0, GRAB, false), Part::Head);
+        assert_eq!(grab(895.0, 100.0, 900.0, GRAB, false), Part::Tail);
+        assert_eq!(grab(500.0, 100.0, 900.0, GRAB, true), Part::Selection);
+        assert_eq!(grab(500.0, 100.0, 900.0, GRAB, false), Part::Playhead);
+        assert_eq!(grab(950.0, 100.0, 900.0, GRAB, true), Part::Playhead);
     }
     #[test]
     fn ruler_ticks_are_readable_and_frame_true_when_zoomed() {
@@ -374,6 +421,14 @@ mod tests {
         let frame = 1001.0 / 120000.0;
         assert_eq!(tick_step(0.5, 1000.0, Some(frame)), frame);
         assert_ne!(tick_step(600.0, 1000.0, Some(frame)), frame);
+    }
+    #[test]
+    fn ruler_labels_never_touch() {
+        for (tick, cells) in [(10.0, 8), (17.3, 12), (64.0, 8), (400.0, 12)] {
+            let interval = label_interval(tick, 8.0, cells);
+            assert_eq!(interval % 5, 0);
+            assert!(interval as f64 * tick >= (cells as f64 + 3.0) * 8.0);
+        }
     }
     #[test]
     fn zoom_keeps_the_playhead_in_place() {

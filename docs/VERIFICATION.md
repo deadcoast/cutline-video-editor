@@ -67,3 +67,20 @@ Scope: timeline input and ruler, preview render cost, two interface state fixes.
 - M now returns to the previous volume instead of 75%. The "Open exported video / Show in folder" actions are cleared on dismiss, on a later export failure and when another file is opened.
 
 Not re-verified in this pass: PiP, fullscreen, HDR, hardware encoders, and the export dialog (the host has no native file dialog). The timeline hover tooltip covers the transport row's left side while the pointer rests on the timeline; this is unchanged from 0.1.0.
+
+## 0.1.1 interface replacement — 2026-11-12
+
+Scope: every drawn part of the interface (`src/ui/`). Player, probe, export and session code are unchanged from the section above. Evidence is from the Linux host (Xvfb, Mesa llvmpipe, libmpv 0.37) and a Windows cross-build. Nothing here was run on a Windows device, a hardware GPU, or a physical high-density display.
+
+| Check | Result / evidence |
+|---|---|
+| `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` | Passed |
+| `cargo test --locked -- --test-threads=2` | 22 passed: 6 library, 8 interface (cell, kit, timeline), 8 real-media |
+| Source search for stock widgets and tooltips | No `on_hover_text`, ComboBox, Slider, DragValue, Modal, menu, TextEdit, ProgressBar, spinner or checkbox remains in `src/` |
+| Windows x64 release cross-build | Passed with Rust 1.97.0, `x86_64-pc-windows-gnu`; GUI subsystem, Windows system DLL imports only |
+
+Observed in the running application at 1120×720, 100 % scale, against a 1920×1080 120 fps clip: empty window; top bar and deck with a loaded video; retracted bars; latched key; pointer highlight on a key and on the close mark; the MORE line; timeline at 3× zoom with labelled ruler and overview strip; I and O marks; typing an IN time (commits) and an invalid OUT time (rejected with an ERROR line, edit unchanged); crop mode with the video between the bars; the export sheet; the key sheet; a failed open; PiP at 480×292; the minimum 720×480 window, where the crop and key lines wrap by whole rows. The same build at forced 125 %, 150 % and 200 % scales selected the 10×20, 12×24 and 16×32 strikes and drew pixel-exact. Tab stepped keyboard focus through the IN and OUT fields, the timeline, the deck keys and the top bar, with Enter opening a field and triggering a key.
+
+The export progress line and the completion line with OPEN EXPORT / SHOW IN FOLDER / DISMISS were observed through a temporary build that skipped the native save dialog (the host has none) and exported a 3840×2160 clip to completion; that bypass is not in the source.
+
+Not observed: fullscreen and maximize (the host has no window manager), edge resizing, the close-during-export sheet, HDR notes in the export sheet, the 175 % scale, and screen-reader output. At 150 % the regular weight's strokes are one device pixel wide; whether that is too light on a real high-density panel has not been judged on one.

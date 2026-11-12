@@ -9,11 +9,11 @@ This build has passed host-side media tests and Windows cross-compilation. Windo
 Extract **the entire ZIP**, then open **Cutline.exe**. No installation, account, Node, browser runtime or Rust toolchain is required to run the packaged application. Keep `libmpv-2.dll`, `vulkan-1.dll` and `tools/` beside the executable. Do not launch from inside the ZIP.
 
 1. Drop a video into the window, or choose **Open**.
-2. Drag the amber start/end brackets to trim. **Trim** accepts exact timecodes.
-3. Choose **Crop**, then drag a corner/edge, move the rectangle, choose an aspect preset or enter X/Y/W/H. **Done** commits the crop; **Cancel** restores it.
-4. Choose **Export**, then a destination filename. Source frame timing and the selected pixel dimensions are preserved.
+2. Drag the amber brackets to trim. Click the **IN** or **OUT** time (or press **T**) to type an exact timecode; Enter or Tab commits it, and the wheel steps it one frame.
+3. Press **C** for crop, then drag a corner or edge, move the rectangle, choose an aspect, or type X/Y/W/H. **ENTER DONE** commits the crop; **ESC CANCEL** restores it.
+4. Press **Ctrl+E**, set the export, then choose a destination filename. Source frame timing and the selected pixel dimensions are preserved.
 
-Controls disappear after pointer inactivity away from the top/bottom. **More → Keep controls visible** pins them. **PiP** makes a compact always-on-top viewer; **Return** restores the editing window. Drag the title or the PiP image to move the window. Resize from the lower-right corner.
+Every control prints the key that triggers it; **F1** lists them all. There are no tooltips. The bars retract after pointer inactivity away from the top and bottom; **MORE → PIN** (or Tab) keeps them out and fits the video between them. **P** makes a compact always-on-top viewer and returns from it. Drag the top bar or the PiP image to move the window. Resize from any edge or corner.
 
 ## Keyboard
 
@@ -24,7 +24,10 @@ Controls disappear after pointer inactivity away from the top/bottom. **More →
 | Shift + Left / Right | Seek five seconds |
 | I / O | Set start / end at the displayed frame |
 | Home / End | Go to the first / last selected frame |
-| T / C | Precise trim / crop |
+| T / C | Type exact trim times / crop |
+| Enter / Tab in a value | Commit / commit and go to the next value |
+| Up / Down in a value, wheel over it | Step one frame, or two pixels for crop |
+| Enter while cropping | Commit the crop |
 | V | Original / cropped preview |
 | L | Loop selection |
 | F or F11 / P | Fullscreen / PiP |
@@ -34,7 +37,7 @@ Controls disappear after pointer inactivity away from the top/bottom. **More →
 | Ctrl+wheel over timeline | Zoom around the playhead |
 | Wheel or Shift+wheel over timeline | Pan a zoomed timeline |
 | Shift+drag on selection | Move both trim boundaries together |
-| Escape | Cancel crop, dismiss dialog, or leave fullscreen/PiP |
+| Escape | Close an open value, cancel crop, dismiss a sheet, or leave fullscreen/PiP |
 | F1 | Shortcut reference |
 
 ## Media behavior
@@ -62,7 +65,7 @@ Run from this directory in PowerShell:
 
 The script builds the native application, downloads checksum-pinned media archives from their upstream distributors, and creates `dist/Cutline-Windows-x64.zip`. It needs 7-Zip for the mpv archive. It checks the standard installation path and PATH; install 7-Zip if neither is available. Dependencies and download hashes are in `Cargo.lock` and `tools.lock.json`.
 
-In this working folder the 0.1.0 portable runtime (`Cutline.exe`, the two DLLs, `tools/`) sits beside the source and is git-ignored, and `history/` keeps the 0.1.0 source and portable archives. `Cutline-next.exe` is the current source cross-compiled for Windows; it runs from this folder against the same DLLs and tools.
+In this working folder the 0.1.0 portable runtime (`Cutline.exe`, the two DLLs, `tools/`) sits beside the source, and `history/` keeps the 0.1.0 source and portable archives. `Cutline-next.exe` is the current source cross-compiled for Windows; it runs from this folder against the same DLLs and tools.
 
 For Linux development, provide libmpv 0.37+ and FFmpeg/ffprobe on PATH, then `cargo run -- path/to/video.mp4`. Linux is a development/test host, not the shipped platform. Use `CUTLINE_MPV_LOG` with an absolute path when diagnosing playback.
 
@@ -78,7 +81,7 @@ The integration tests generate and encode real media with FFmpeg. On Windows, pl
 
 ## Architecture
 
-`model.rs`: source-time ranges, crop geometry and bounded edit history. `media/player.rs`: contained libmpv FFI and GPU rendering with checked GL-thread ownership. `media/probe.rs`: bounded metadata inspection and orientation normalization. `media/export.rs`: immutable export plans, progress, cancellation and no-clobber publication. `media/session.rs`: atomic local edit recovery. `ui/`: native egui controls and single-video workflow.
+`model.rs`: source-time ranges, crop geometry and bounded edit history. `media/player.rs`: contained libmpv FFI and GPU rendering with checked GL-thread ownership. `media/probe.rs`: bounded metadata inspection and orientation normalization. `media/export.rs`: immutable export plans, progress, cancellation and no-clobber publication. `media/session.rs`: atomic local edit recovery. `ui/cell.rs`: the bitmap face, device-pixel grid and single draw mesh. `ui/kit.rs`: the controls built from cells. `ui/timeline.rs`, `ui/crop.rs`: gestures and drawing. `ui/mod.rs`: bar contents and the single-video workflow. egui/eframe supply the window, input and focus; no stock widget is drawn.
 
 No shell interprets filenames. Media tools receive separate argument values. There is no remote API, updater, telemetry or arbitrary script runner.
 

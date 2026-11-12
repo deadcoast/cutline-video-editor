@@ -12,8 +12,8 @@ use cutline::{
     model::{Crop, Edit, History, parse_timecode, timecode},
 };
 use eframe::egui::{
-    self, Align2, FontId, Key, Order, Rect, RichText, Sense, Stroke, StrokeKind, Vec2,
-    ViewportCommand, WindowLevel,
+    self, Align2, Key, Order, Rect, RichText, Sense, Stroke, StrokeKind, Vec2, ViewportCommand,
+    WindowLevel,
 };
 use std::{
     path::PathBuf,
@@ -595,80 +595,135 @@ impl App {
     fn chrome(&mut self, ctx: &egui::Context, screen: Rect) {
         egui::Area::new("top-chrome".into())
             .order(Order::Foreground)
-            .fixed_pos(screen.min + egui::vec2(10.0, 8.0))
+            .fixed_pos(screen.min)
             .show(ctx, |ui| {
                 egui::Frame::new()
                     .fill(theme::SURFACE)
-                    .corner_radius(4)
-                    .inner_margin(egui::Margin::symmetric(8, 2))
+                    .inner_margin(egui::Margin::symmetric(12, 10))
                     .show(ui, |ui| {
-                        ui.set_width(screen.width() - 36.0);
+                        ui.set_width(screen.width() - 24.0);
+                        ui.spacing_mut().item_spacing.x = 8.0;
                         ui.horizontal(|ui| {
                             if ui
-                                .add(
-                                    egui::Label::new(RichText::new("CUTLINE").monospace())
+                                .add_sized(
+                                    [76.0, 32.0],
+                                    egui::Label::new(RichText::new("CUTLINE").strong().size(14.0))
                                         .sense(Sense::click_and_drag()),
                                 )
                                 .drag_started()
                             {
                                 ctx.send_viewport_cmd(ViewportCommand::StartDrag);
                             }
-                            if !self.pip {
-                                if theme::button(ui, "Open", "Open video · Ctrl+O").clicked() {
-                                    self.pick(ctx);
-                                }
-                                let name = self.media.as_ref().map_or(String::new(), Media::name);
-                                let width = (ui.available_width() - 240.0).max(20.0);
-                                let response = ui.add_sized(
-                                    [width, 26.0],
-                                    egui::Label::new(
-                                        RichText::new(name.clone()).color(theme::MUTED),
-                                    )
+                            if !self.pip
+                                && theme::secondary_icon(
+                                    ui,
+                                    "Open",
+                                    theme::Icon::Open,
+                                    "Open video · Ctrl+O",
+                                )
+                                .clicked()
+                            {
+                                self.pick(ctx);
+                            }
+                            let control_count = if self.pip { 4.0 } else { 5.0 };
+                            let control_width = control_count * 36.0 + (control_count - 1.0) * 8.0;
+                            let name = self.media.as_ref().map_or(String::new(), Media::name);
+                            let width = (ui.available_width() - control_width - 8.0).max(0.0);
+                            let response = ui.add_sized(
+                                [width, 32.0],
+                                egui::Label::new(RichText::new(name.clone()).color(theme::MUTED))
                                     .truncate()
                                     .sense(Sense::click_and_drag()),
-                                );
+                            );
+                            if !name.is_empty() {
                                 response.clone().on_hover_text(name);
-                                if response.drag_started() {
-                                    ctx.send_viewport_cmd(ViewportCommand::StartDrag);
-                                }
-                                if response.double_clicked() {
-                                    let maximized =
-                                        ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-                                    ctx.send_viewport_cmd(ViewportCommand::Maximized(!maximized));
-                                }
                             }
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
+                            if response.drag_started() {
+                                ctx.send_viewport_cmd(ViewportCommand::StartDrag);
+                            }
+                            if response.double_clicked() {
+                                let maximized =
+                                    ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+                                ctx.send_viewport_cmd(ViewportCommand::Maximized(!maximized));
+                            }
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(control_width, 32.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
                                 |ui| {
-                                    if theme::button(ui, "×", "Close · Alt+F4").clicked() {
-                                        ctx.send_viewport_cmd(ViewportCommand::Close);
-                                    }
-                                    if theme::button(ui, "—", "Minimize").clicked() {
-                                        ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
-                                    }
-                                    if theme::button(
-                                        ui,
-                                        if self.fullscreen { "Window" } else { "Full" },
-                                        "Fullscreen · F",
-                                    )
-                                    .clicked()
+                                    if !self.pip
+                                        && theme::icon_button(
+                                            ui,
+                                            theme::Icon::Help,
+                                            "Keyboard shortcuts",
+                                            "Keyboard shortcuts · F1",
+                                        )
+                                        .clicked()
                                     {
-                                        self.toggle_fullscreen(ctx);
+                                        self.dialog = Dialog::Help;
                                     }
-                                    if theme::button(
+                                    if theme::icon_button(
                                         ui,
-                                        if self.pip { "Return" } else { "PiP" },
-                                        "Compact, always-on-top viewer · P",
+                                        if self.pip {
+                                            theme::Icon::Restore
+                                        } else {
+                                            theme::Icon::Pip
+                                        },
+                                        if self.pip {
+                                            "Return to editor"
+                                        } else {
+                                            "Picture in picture"
+                                        },
+                                        if self.pip {
+                                            "Return to editor · P"
+                                        } else {
+                                            "Picture in picture · P"
+                                        },
                                     )
                                     .clicked()
                                     {
                                         self.toggle_pip(ctx);
                                     }
-                                    if !self.pip
-                                        && theme::button(ui, "?", "Keyboard controls · F1")
-                                            .clicked()
+                                    if theme::icon_button(
+                                        ui,
+                                        if self.fullscreen {
+                                            theme::Icon::ExitFullscreen
+                                        } else {
+                                            theme::Icon::Fullscreen
+                                        },
+                                        if self.fullscreen {
+                                            "Exit fullscreen"
+                                        } else {
+                                            "Fullscreen"
+                                        },
+                                        if self.fullscreen {
+                                            "Exit fullscreen · F / Escape"
+                                        } else {
+                                            "Fullscreen · F"
+                                        },
+                                    )
+                                    .clicked()
                                     {
-                                        self.dialog = Dialog::Help;
+                                        self.toggle_fullscreen(ctx);
+                                    }
+                                    if theme::icon_button(
+                                        ui,
+                                        theme::Icon::Minimize,
+                                        "Minimize",
+                                        "Minimize window",
+                                    )
+                                    .clicked()
+                                    {
+                                        ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
+                                    }
+                                    if theme::icon_button(
+                                        ui,
+                                        theme::Icon::Close,
+                                        "Close",
+                                        "Close · Alt+F4",
+                                    )
+                                    .clicked()
+                                    {
+                                        ctx.send_viewport_cmd(ViewportCommand::Close);
                                     }
                                 },
                             );
@@ -690,30 +745,45 @@ impl App {
                     .show(ui, |ui| {
                         ui.set_width(width - 20.0);
                         ui.spacing_mut().item_spacing.y = 6.0;
-                        ui.spacing_mut().button_padding = egui::vec2(10.0, 5.0);
-                        ui.spacing_mut().interact_size.y = 28.0;
+                        ui.spacing_mut().interact_size.y = 32.0;
                         ui.horizontal(|ui| {
-                            if ui
-                                .add_sized(
-                                    [56.0, 28.0],
-                                    egui::Button::new(if self.playback.paused {
-                                        "Play"
-                                    } else {
-                                        "Pause"
-                                    })
-                                    .frame(false),
-                                )
-                                .on_hover_text("Play / pause · Space")
-                                .clicked()
+                            if theme::icon_button(
+                                ui,
+                                if self.playback.paused {
+                                    theme::Icon::Play
+                                } else {
+                                    theme::Icon::Pause
+                                },
+                                if self.playback.paused {
+                                    "Play"
+                                } else {
+                                    "Pause"
+                                },
+                                "Play / pause · Space",
+                            )
+                            .clicked()
                             {
                                 self.toggle_play();
                             }
                             if !self.pip && screen.width() > 650.0 {
-                                if theme::button(ui, "‹", "Previous frame · Left arrow").clicked()
+                                if theme::icon_button(
+                                    ui,
+                                    theme::Icon::PreviousFrame,
+                                    "Previous frame",
+                                    "Previous frame · Left arrow",
+                                )
+                                .clicked()
                                 {
                                     self.run(|p| p.command(&["frame-back-step"]));
                                 }
-                                if theme::button(ui, "›", "Next frame · Right arrow").clicked() {
+                                if theme::icon_button(
+                                    ui,
+                                    theme::Icon::NextFrame,
+                                    "Next frame",
+                                    "Next frame · Right arrow",
+                                )
+                                .clicked()
+                                {
                                     self.run(|p| p.command(&["frame-step"]));
                                 }
                             }
@@ -751,6 +821,7 @@ impl App {
                                             )
                                             .fill(theme::TRIM),
                                         )
+                                        .on_hover_text("Export a new video · Ctrl+E")
                                         .clicked()
                                     {
                                         self.export_dialog();
@@ -902,7 +973,9 @@ impl App {
                                                 .color(theme::MUTED),
                                             );
                                         }
-                                    });
+                                    })
+                                    .response
+                                    .on_hover_text("Playback, comparison and timeline settings");
                                 },
                             );
                         });
@@ -942,7 +1015,7 @@ impl App {
                     .show(ui, |ui| {
                         ui.set_width((ctx.content_rect().width() - 48.0).min(760.0));
                         ui.horizontal_wrapped(|ui| {
-                            ui.label(RichText::new("CROP").monospace().color(theme::CROP));
+                            ui.label(RichText::new("Crop").strong().color(theme::CROP));
                             let label = match self.crop.ratio {
                                 None => "Free",
                                 Some(r) if (r - 16.0 / 9.0).abs() < 0.001 => "16:9",
@@ -1319,45 +1392,34 @@ impl eframe::App for App {
                             ctx.send_viewport_cmd(ViewportCommand::StartDrag);
                         }
                     }
-                } else {
-                    let center = area.center();
-                    ui.painter().text(
-                        center - egui::vec2(0.0, 75.0),
-                        Align2::CENTER_CENTER,
-                        "[  CUTLINE  ]",
-                        FontId::monospace(30.0),
-                        theme::INK,
-                    );
-                    ui.painter().text(
-                        center - egui::vec2(0.0, 28.0),
-                        Align2::CENTER_CENTER,
-                        "VIEW  /  TRIM  /  CROP",
-                        FontId::monospace(12.0),
-                        theme::MUTED,
-                    );
+                } else if !self.loading {
+                    // One layout owns the action and its hint, so text metrics and DPI cannot
+                    // move independently painted lines into the button's hit area.
                     ui.scope_builder(
                         egui::UiBuilder::new().max_rect(Rect::from_center_size(
-                            center + egui::vec2(0.0, 24.0),
-                            egui::vec2(260.0, 90.0),
+                            area.center(),
+                            egui::vec2(280.0, 80.0),
                         )),
                         |ui| {
                             ui.vertical_centered(|ui| {
-                                if theme::primary(ui, "Open a video").clicked() {
+                                ui.spacing_mut().item_spacing.y = 16.0;
+                                if theme::primary_icon(
+                                    ui,
+                                    "Open video",
+                                    theme::Icon::Open,
+                                    "Choose a video file · Ctrl+O",
+                                )
+                                .clicked()
+                                {
                                     self.pick(ctx);
                                 }
-                                ui.add_space(10.0);
                                 ui.label(
-                                    RichText::new("or drop a file anywhere").color(theme::MUTED),
+                                    RichText::new("or drop a video here")
+                                        .size(13.0)
+                                        .color(theme::MUTED),
                                 );
                             });
                         },
-                    );
-                    ui.painter().text(
-                        egui::pos2(area.center().x, area.bottom() - 48.0),
-                        Align2::CENTER_CENTER,
-                        "SOURCE FRAME RATE. SOURCE RESOLUTION.",
-                        FontId::monospace(11.0),
-                        theme::MUTED,
                     );
                 }
                 if self.loading {

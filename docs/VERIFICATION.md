@@ -1,8 +1,10 @@
-# Cutline 0.1.0 — verification record
+# Cutline — verification record
+
+## 0.1.0 — 2026-10-20
 
 Date: 2026-10-20. Status: Windows build candidate; automated media checks and native Linux UI inspection passed. A physical Windows device was not available in this environment. This record does not claim Windows runtime certification or sustained 4K playback performance.
 
-## Executed checks
+### Executed checks
 
 | Check | Result / evidence |
 |---|---|
@@ -17,7 +19,7 @@ Date: 2026-10-20. Status: Windows build candidate; automated media checks and na
 
 The automated media tests used FFmpeg/ffprobe 6.1.1 on Linux. The portable package contains upstream Windows FFmpeg/ffprobe 9.0.2 and mpv revision 6a262d11f6. The native UI host used libmpv 0.37. These are different execution environments; passing the host checks does not establish that every Windows driver behaves correctly.
 
-## Media results
+### Media results
 
 - 60 fps and 120000/1001 fps: trim source frames 17 through 76, crop to 480×270, preserve one audio track, and export exactly 60 frames at the source rate. A decoded-image comparison confirms the first exported image matches source frame 17 more closely than either neighboring frame; this checks content as well as metadata.
 - 3840×2160 at 60 fps: trim 0.1–0.4 seconds; output remains 3840×2160 and contains exactly 18 frames.
@@ -27,7 +29,7 @@ The automated media tests used FFmpeg/ffprobe 6.1.1 on Linux. The portable packa
 - A 240 fps source produces an export plan with timestamp passthrough and no frame-rate replacement argument. This is an argument check, not a 240 fps performance measurement.
 - Existing destination content remains unchanged. Cancellation removes partial output. Geometry property tests keep crop rectangles inside the source and on the encoder-compatible pixel grid.
 
-## Native interaction results
+### Native interaction results
 
 Observed the actual application with a 1920×1080, 120 fps test recording: video display and play/pause; independent head/tail dragging; precise numeric trim; free crop dragging and committed crop preview; undo; crop cancellation; compact PiP sizing and return; control auto-hide; export configuration; and edit recovery across restarts. The editor was inspected at 1120×720 and its 720×480 minimum. The export dialog remains fully reachable at the minimum size. Crop fields have fixed widths so their changing values do not move the confirmation buttons.
 
@@ -35,7 +37,7 @@ A quick Ctrl+Z sequence exposed reliance on the current modifier state after key
 
 The host's Mesa software renderer produced black/incorrect-color intermediate video passes. Cutline now selects mpv's documented compatibility renderer only when a software rasterizer is identified. Repeated launches and playback/trim/crop operations showed correct SDR test colors through that path. Hardware graphics retain the normal renderer. The software compatibility path is not an HDR color-reference preview; HDR output uses the independent FFmpeg pipeline.
 
-## Required Windows device acceptance
+### Required Windows device acceptance
 
 The included Windows workflow and `scripts/verify-windows.ps1` make the automated checks repeatable. They have not been run on a remote Windows runner during this session. Before considering a public production release, verify on the intended machines:
 
@@ -84,3 +86,16 @@ Observed in the running application at 1120×720, 100 % scale, against a 1920×1
 The export progress line and the completion line with OPEN EXPORT / SHOW IN FOLDER / DISMISS were observed through a temporary build that skipped the native save dialog (the host has none) and exported a 3840×2160 clip to completion; that bypass is not in the source.
 
 Not observed: fullscreen and maximize (the host has no window manager), edge resizing, the close-during-export sheet, HDR notes in the export sheet, the 175 % scale, and screen-reader output. At 150 % the regular weight's strokes are one device pixel wide; whether that is too light on a real high-density panel has not been judged on one.
+
+## 0.1.1 release package — 2026-11-12
+
+The source is commit b0314a4 with only the README, this record and the package files changed; no Rust source differs from that commit.
+
+| Check | Result / evidence |
+|---|---|
+| `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --locked -- --test-threads=2` on the Linux host with Rust 1.99.1 | Passed; 22 tests: 6 library, 8 interface, 8 real-media |
+| `Cutline.exe` in this package | Cross-compiled from that source with Rust 1.99.1, `x86_64-pc-windows-gnu`, static compiler runtime; GUI subsystem; imports Windows system DLLs only |
+| GitHub Actions run 43243717471 for b0314a4 on a `windows-2025` runner, Rust 1.99.1 MSVC | Passed: native release build, packaging by `scripts/build-windows.ps1` with the three engine archives checked against `tools.lock.json`, then `scripts/verify-windows.ps1` (fmt, clippy, the same 22 tests, the real-media ones run through the bundled Windows FFmpeg and ffprobe) |
+| Engines | `libmpv-2.dll`, `tools/ffmpeg.exe`, `tools/ffprobe.exe` and `vulkan-1.dll` are byte-identical to the 0.1.0 package; their lines in `SHA256SUMS.txt` are unchanged |
+
+The Actions runner has no display or GPU and does not launch the application, and its MSVC build is not the executable shipped here. An earlier development build of this version was launched once on the owner's Windows machine at 100 % scale (`screenshots/Screenshot 2026-11-12 034827.png`); that was before the interface replacement and shows only that the executable starts and loads the playback engine there. The device acceptance list in the 0.1.0 section is still outstanding for this release, and so are the items listed as not observed above.

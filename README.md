@@ -65,7 +65,7 @@ Run from this directory in PowerShell:
 
 The script builds the native application, downloads checksum-pinned media archives from their upstream distributors, and creates `dist/Cutline-Windows-x64.zip`. It needs 7-Zip for the mpv archive. It checks the standard installation path and PATH; install 7-Zip if neither is available. Dependencies and download hashes are in `Cargo.lock` and `tools.lock.json`.
 
-In this working folder the 0.1.0 portable runtime (`Cutline.exe`, the two DLLs, `tools/`) sits beside the source, and `history/` keeps the 0.1.0 source and portable archives. `Cutline-next.exe` is the current source cross-compiled for Windows; it runs from this folder against the same DLLs and tools.
+In this repository the current portable package is checked in at the root beside the source (`Cutline.exe`, the two DLLs, `tools/`, `licenses/`, `SHA256SUMS.txt`, `VERIFICATION.md`), so a clone runs by opening `Cutline.exe`. `history/` keeps each release's source and portable archives; the files without a version in their name are 0.1.0.
 
 For Linux development, provide libmpv 0.37+ and FFmpeg/ffprobe on PATH, then `cargo run -- path/to/video.mp4`. Linux is a development/test host, not the shipped platform. Use `CUTLINE_MPV_LOG` with an absolute path when diagnosing playback.
 

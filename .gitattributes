@@ -2,3 +2,11 @@ history/Cutline-Windows-x64.zip filter=lfs diff=lfs merge=lfs -text
 libmpv-2.dll filter=lfs diff=lfs merge=lfs -text
 tools/ffmpeg.exe filter=lfs diff=lfs merge=lfs -text
 tools/ffprobe.exe filter=lfs diff=lfs merge=lfs -text
+history/Cutline-0.1.1-Windows-x64.zip filter=lfs diff=lfs merge=lfs -text
+/LICENSE -text
+/README.md -text
+/SHA256SUMS.txt -text
+/THIRD_PARTY.md -text
+/VERIFICATION.md -text
+/tools.lock.json -text
+/licenses/** -text
